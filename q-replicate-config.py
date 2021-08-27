@@ -3,6 +3,7 @@ __version__ = "2021.08.27"
 
 import os
 import logging
+import json
 from qumulo.rest_client import RestClient
 from q_functions import *
 
