@@ -5,7 +5,7 @@ Python script to replicate SMB/NFS/Quotas config from Qumulo to Qumulo, based on
  - python3
  - qumulo_api (pip install qumulo_api)
 
-# What does this script does ? :
+# What does this script do ? :
 This script allows you to get the following elements on a source Qumulo cluster and replicate it to a target Qumulo cluster, based on replications policies :
  - SMB Shares
  - NFS Exports
