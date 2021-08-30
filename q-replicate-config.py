@@ -1,15 +1,12 @@
 __Author__ = "Vincent Lamy"
-__version__ = "2021.08.27"
+__version__ = "2021.0830"
 
-import os
-import logging
-import json
-from qumulo.rest_client import RestClient
 from q_functions import *
 
 # Logging Details
 logging.basicConfig(filename='q-replicate-config.log', level=logging.INFO,
                     format='%(asctime)s,%(levelname)s,%(message)s')
+
 
 # Read credentials
 json_file = open('./credentials.json', 'r')
@@ -55,12 +52,15 @@ except Exception as err:
 
 # Get All Replication configured on primary cluster
 all_repl = prc.replication.list_source_relationship_statuses()
+tgt_cluster_id = get_cluster_id(src, logging)
 
 # Extract only replication where target is secondary cluster
 path_lst = []
 path_translation = {}
 for repl in all_repl:
-    if repl['target_address'] == secondary_cluster_address:
+    test_repl = is_ip_on_cluster(tgt_cluster_id, repl['target_address'], secondary_port_number,
+                                 secondary_username, secondary_password, logging)
+    if test_repl:
         logging.info(
             'main,  Replication id {} has target ip {} and will be processed'.format(repl['id'],
                                                                                      repl['target_address']))
@@ -97,7 +97,7 @@ for path in path_lst:
             'main,  File {} already exists --> we removed it'.format(quotas_file))
 
     # Get SMB Shares related to this path
-    smb_shares = get_smb_shr(prc, logging, path)
+    smb_shares = get_smb_shr(prc, src, logging, path)
     f = open(smb_file, "w")
     f.write(smb_shares)
     f.close()
@@ -131,6 +131,8 @@ for path in path_lst:
         os.remove(quotas_file)
         logging.info(
             'main,  Temporary file {} has been removed'.format(quotas_file))
+
+
 # Closing connection to clusters
 prc.close()
 src.close()

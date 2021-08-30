@@ -1,9 +1,51 @@
+__Author__ = "Vincent Lamy"
+__version__ = "2021.0830"
 import json
+import os
+import logging
+from qumulo.rest_client import RestClient
 
 # Returns the path related to the id
 import qumulo.rest.nfs
 
 
+# retrieve Qumulo cluster ID
+def get_cluster_id(rc, logging):
+    state = rc.node_state.get_node_state()
+    logging.info('get_cluster_id,  Qumulo cluster {} ID is {}'.format(rc.conninfo.host, state['cluster_id']))
+    return state['cluster_id']
+
+
+# check if IP belongs to the cluster
+def is_ip_on_cluster(cluster_id, secondary_cluster_address, secondary_port_number, secondary_username,
+                     secondary_password, logging):
+    # Try to connect to the IP address with secondary cluster credentials
+    try:
+        rc = RestClient(secondary_cluster_address, secondary_port_number)
+        rc.login(secondary_username, secondary_password)
+        logging.info('is_ip_on_cluster,  Connection established with {}'.format(secondary_cluster_address))
+        logging.info('is_ip_on_cluster,  {} is a Qumulo cluster'.format(secondary_cluster_address))
+        tgt_id = get_cluster_id(rc, logging)
+        if cluster_id == tgt_id:
+            logging.info('is_ip_on_cluster, IP address {} belongs to cluster {}'.
+                         format(secondary_cluster_address, tgt_id))
+            rc.close()
+            return True
+        else:
+            logging.info('is_ip_on_cluster, IP address {} do not belongs to cluster {}'.
+                         format(secondary_cluster_address, tgt_id))
+            rc.close()
+            return False
+    except Exception as err:
+        logging.info('is_ip_on_cluster,  Connection cannot be established with {}'.format(secondary_cluster_address))
+        logging.info('is_ip_on_cluster,  Credentials for {} seems not correct or it is not a Qumulo cluster'
+                     .format(secondary_cluster_address))
+        logging.info(
+            'Error message is {}'.format(err.__dict__))
+        return False
+
+
+# Returns the path related to the id
 def convert_id_to_path(rc, logging, dir_id):
     file_attr = rc.fs.get_file_attr(dir_id)
     logging.info(
@@ -20,23 +62,54 @@ def convert_path_to_id(rc, logging, path):
 
 
 # Get all SMB shares defined under the path in argument
-def get_smb_shr(rc, logging, path):
+def get_smb_shr(prc, src, logging, path):
     shares = []
     # Retrieve all SMB Shares
     try:
-        all_shr = rc.smb.smb_list_shares()
+        all_shr = prc.smb.smb_list_shares()
         # extract only shares defined under path
         for shr in all_shr:
             if path.rstrip(path[-1]) in shr['fs_path']:
-                shares.append(shr)
                 logging.info(
                     'get_smb_shr, Share {} will be replicated'.format(shr['share_name']))
+                # Check if there is an ACE referencing LOCAL trustee - if so, get its local name and translate
+                # for the secondary cluster if username exists on it - discard if it doesn't
+                final_perms = []
+                for perm in shr['permissions']:
+                    if perm['trustee']['domain'] == "LOCAL":
+
+                        # Get username from auth_id
+                        src_ident = prc.auth.find_identity(auth_id=perm['trustee']['auth_id'])
+
+                        # Check if username exists on secondary cluster and gets its auth_id and sid
+                        try:
+                            tgt_ident = src.auth.find_identity(domain='LOCAL',name=src_ident['name'])
+                            logging.info(
+                                'get_smb_shr, Username {} exists on secondary cluster, '
+                                'translating auth_id from {} to {} and sid from {} to {}'.
+                                    format(src_ident['name'], src_ident['auth_id'], tgt_ident['auth_id'],
+                                           src_ident['sid'], tgt_ident['sid']))
+                            perm['trustee']['auth_id'] = tgt_ident['auth_id']
+                            perm['trustee']['sid'] = tgt_ident['sid']
+                            final_perms.append(perm)
+                        except Exception as err:
+                            # If username do not exists on destination, remove the ACE
+                            logging.info(
+                                'get_smb_shr, Username {} do not exists on cluster {}'.
+                                    format(src_ident['name'], src.conninfo.host))
+                            logging.info(
+                                'get_smb_shr, Discarding ACE for user {} on share {}'.
+                                    format(src_ident['name'], shr['share_name']))
+                    else:
+                        final_perms.append(perm)
+                shr['permissions'] = final_perms
+                shares.append(shr)
         shares = json.dumps(shares, indent=4)
         return shares
     except Exception as err:
         logging.error(
             'get_smb_shr, There was an issue : Can not retrieve SMB Shares from {}'.
-            format(rc.conninfo.host))
+            format(prc.conninfo.host))
         logging.error(
             'get_smb_shr, Error message is {}'.format(err.__dict__))
         logging.info('get_smb_shr, Ending program now')
