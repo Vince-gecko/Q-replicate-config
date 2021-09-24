@@ -1,12 +1,40 @@
 __Author__ = "Vincent Lamy"
-__version__ = "2021.0830"
-import json
+__version__ = "2021.0924"
 import os
+import json
+import shutil
+import qumulo
 import logging
+from datetime import datetime
 from qumulo.rest_client import RestClient
 
-# Returns the path related to the id
-import qumulo.rest.nfs
+
+# handling file versions
+def archive_file(filename, logging, date_suffix):
+    # Check if version directory exists and creates it if needed
+    if not os.path.isdir("./versions"):
+        os.mkdir("./versions")
+        logging.info('archive_file, directory versions did not exists - creating it')
+    # Copy renamed file to version directory
+    # Removing ./ from filename for easier manipulation
+    filename = filename[2:]
+    new_filename = filename + "-" + date_suffix
+    latest_filename = filename + "-latest"
+    shutil.copy2(filename, './versions/{}'.format(new_filename))
+    logging.info('archive_file, Archiving file ./{} to ./versions/{}'.format(filename, new_filename))
+    # Check if symlink to latest version exists
+    if os.path.islink('./versions/{}'.format(latest_filename)):
+        # Retrieve symlink target to delete old file
+        file_to_del = os.readlink('./versions/{}'.format(latest_filename))
+        # update the symlink - delete and recreate - then remove old file
+        os.unlink('./versions/{}'.format(latest_filename))
+        os.symlink('./{}'.format(new_filename),'./versions/{}'.format(latest_filename))
+        os.remove('./versions/{}'.format(file_to_del))
+        logging.info('archive_file, File ./versions/{} has been removed'.format(file_to_del))
+    else:
+        # Create the symlink
+        print('Create SymLink {} to {}'.format(latest_filename,new_filename))
+        os.symlink('./{}'.format(new_filename),'./versions/{}'.format(latest_filename))
 
 
 # retrieve Qumulo cluster ID
@@ -170,7 +198,7 @@ def get_quotas(rc, logging, path):
 
 
 # Replicate quotas from source to target cluster
-def replicate_quotas(prc, src, logging, src_file, path_translation):
+def replicate_quotas(prc, src, logging, src_file, path_translation, date_suffix):
     logging.info(
         'replicate_quotas, Start replicating quotas from file {}'.format(src_file))
     # Parse json source quota file
@@ -236,10 +264,11 @@ def replicate_quotas(prc, src, logging, src_file, path_translation):
                         'replicate_quotas, Error message is {}'.format(err.__dict__))
     logging.info(
         'replicate_quotas, End replicating quotas from file {}'.format(src_file))
+    archive_file(src_file, logging, date_suffix)
 
 
 # Replication NFS exports from source to target cluster
-def replicate_nfs(src, logging, src_file, path_translation):
+def replicate_nfs(src, logging, src_file, path_translation, date_suffix):
     logging.info(
         'replicate_nfs, Start replicating NFS exports from file {}'.format(src_file))
     # Parse json source nfs file
@@ -309,10 +338,10 @@ def replicate_nfs(src, logging, src_file, path_translation):
                         format(export['fs_path']))
                     logging.error(
                         'replicate_nfs, Error message is {}'.format(err.__dict__))
-
+    archive_file(src_file, logging, date_suffix)
 
 # Replication SMB shares from source to target cluster
-def replicate_smb(src, logging, src_file, path_translation):
+def replicate_smb(src, logging, src_file, path_translation, date_suffix):
     logging.info(
         'replicate_smb, Start replicating SMB Shares from file {}'.format(src_file))
     # Parse json source SMB file
@@ -384,3 +413,4 @@ def replicate_smb(src, logging, src_file, path_translation):
                         format(share['share_name'], dst_path))
                     logging.error(
                         'replicate_smb, Error message is {}'.format(err.__dict__))
+    archive_file(src_file, logging, date_suffix)

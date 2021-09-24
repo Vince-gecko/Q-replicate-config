@@ -1,12 +1,16 @@
 __Author__ = "Vincent Lamy"
-__version__ = "2021.0830"
+__version__ = "2021.0924"
 
 from q_functions import *
+
 
 # Logging Details
 logging.basicConfig(filename='q-replicate-config.log', level=logging.INFO,
                     format='%(asctime)s,%(levelname)s,%(message)s')
 
+# Create timestamp for naming pattern
+now = datetime.now()
+date_suffix = now.strftime("%Y%m%d-%H%M%S")
 
 # Read credentials
 json_file = open('./credentials.json', 'r')
@@ -77,6 +81,7 @@ for repl in all_repl:
 
 # Retrieve SMB shares, NFS exports and quotas related to each source path in path_lst
 # Generates 3 json files for SMB, NFS and Quotas
+
 for path in path_lst:
     # Filenames pattern will refer the actual path
     smb_file = './smb' + path.rstrip(path[-1]).replace('/', '-') + '.json'
@@ -102,6 +107,7 @@ for path in path_lst:
     f.write(smb_shares)
     f.close()
 
+
     # Get NFS exports related to this path
     nfs_exports = get_nfs_exp(prc, logging, path)
     f = open(nfs_file, "w")
@@ -114,9 +120,9 @@ for path in path_lst:
     f.write(quotas)
     f.close()
 
-    replicate_quotas(prc, src, logging, quotas_file, path_translation)
-    replicate_nfs(src, logging, nfs_file, path_translation)
-    replicate_smb(src, logging, smb_file, path_translation)
+    replicate_quotas(prc, src, logging, quotas_file, path_translation, date_suffix)
+    replicate_nfs(src, logging, nfs_file, path_translation, date_suffix)
+    replicate_smb(src, logging, smb_file, path_translation, date_suffix)
 
     # Clean temporary files
     if os.path.exists(smb_file):
